@@ -1,0 +1,39 @@
+galaxy_info:
+  author: Robert Starmer
+  description: A quick FRR router Ansible Role
+  company: Kumulus Technologies 
+
+  # If the issue tracker for your role is not on github, uncomment the
+  # next line and provide a value
+  # issue_tracker_url: http://example.com/issue/tracker
+
+  # Some suggested licenses:
+  # - BSD (default)
+  # - MIT
+  # - GPLv2
+  # - GPLv3
+  # - Apache
+  # - CC-BY
+  license: MIT
+
+  min_ansible_version: 2.3
+  github_branch: master
+
+  #
+  # platforms is a list of platforms, and each platform has a name and a list of versions.
+  #
+  platforms:
+  - name: Ubuntu
+    versions:
+    - xenial
+    - 16.04
+
+  galaxy_tags:
+  - ubuntu
+  - xenial
+  - router
+  - routing
+  - frr
+  - quagga
+
+dependencies: []

@@ -1,0 +1,178 @@
+---
+- name: install needed development packages
+  apt:
+    name: "{{item}}"
+  with_items:
+    - git
+    - autoconf
+    - automake
+    - libtool
+    - make
+    - gawk
+    - libreadline-dev
+    - texinfo
+    - dejagnu
+    - pkg-config
+    - libpam0g-dev
+    - libjson-c-dev
+    - bison
+    - flex
+    - python-pytest
+    - libc-ares-dev
+    - python3-dev
+    - libsystemd-dev
+    - python-ipaddr
+    - python-sphinx
+    - install-info
+
+- name: create FRR group
+  group:
+    name: frr
+    gid: 92
+    state: present
+
+- name: create FRRvty system group
+  group:
+    name: frrvty
+    gid: 85
+    system: yes
+    state: present
+
+- name: create FRR user
+  user:
+    name: frr
+    home: /var/run/frr
+    createhome: yes
+    shell: /sbin/nologin
+    system: yes
+    comment: FRR suite
+    group: frr
+    groups:
+      - frr
+      - frrvty
+
+- name: get FRR code from github
+  git:
+    clone: yes
+    repo: https://github.com/frrouting/frr.git
+    version: HEAD
+    dest: frr
+
+- name: check if FRR code is already built
+  find:
+    path: /usr/bin
+    name: bgp_btoa
+    patterns: 'bgp_btoa'
+  register:  bgp_btoa
+
+- debug: var=bgp_btoa
+
+- name: build FRR code
+  script: files/build.sh
+  when: bgp_btoa.matched != 1
+
+- name: create /var/log/frr directory
+  file:
+    path: /var/log/frr
+    owner: frr
+    group: frr
+    mode: 0755
+
+- name: create /etc/frr directory
+  file:
+    path: /etc/frr
+    owner: frr
+    group: frr
+    mode: 0775
+
+- name: install default config files
+  command: install -m 640 -o frr -g frr /dev/null /etc/frr/{{item}}.conf
+  args:
+    chdir: /root/frr
+  with_items:
+    - zebra
+    - bgpd
+    - ospfd
+    - ospf6d
+    - isisd
+    - ripd
+    - ripngd
+    - pimd
+    - ldpd
+    - nhrpd
+    - vtysh
+
+- name: ensure ipv4 and ipv6 forwarding is enabled
+  lineinfile:
+    regexp: "^{{item}}$"
+    line: "{{item}}"
+    dest: /etc/sysctl.conf
+  with_items:
+    - net.ipv4.ip_forward=1
+    - net.ipv6.conf.all.forwarding=1
+    - net.mpls.conf.eth0.input=1
+    - net.mpls.conf.eth1.input=1
+    - net.mpls.conf.eth2.input=1
+    - net.mpls.platform_labels=100000
+  register: systctl
+
+- name: add mpls modules
+  lineinfile:
+    regexp: "^{{item}}$"
+    line: "{{item}}"
+    dest: /etc/modules-load.d/modules.conf
+    create: yes
+  with_items:
+    - mpls-router
+    - mpls-iptunnel
+  register: modules
+
+- name: modprobe new modules
+  command: modprobe {{item}}
+  with_items:
+    - mpls-router
+    - mpls-iptunnel
+  when: modules.changed
+
+- name: reload systemctl state
+  command: sysctl -p
+  when: systctl.changed
+
+- name: add services and configs
+  command: install -m 644 -o frr -g frr  "{{item.src}}" "{{item.dest}}"
+  args:
+    chdir: /root/frr
+  with_items:
+    - { src: 'tools/frr.service', dest: '/etc/systemd/system/frr.service' }
+    - { src: 'tools/etc/default/frr', dest: '/etc/default/frr' }
+    - { src: 'tools/etc/frr/daemons', dest: '/etc/frr/daemons' }
+    - { src: 'tools/etc/frr/daemons.conf', dest: '/etc/frr/daemons.conf' }
+    - { src: 'tools/etc/frr/frr.conf', dest: '/etc/frr/frr.conf' }
+    - { src: 'tools/etc/frr/vtysh.conf', dest: '/etc/frr/vtysh.conf' }
+
+- name: enable router daemons
+  lineinfile:
+    regexp: "^{{item}}=.*"
+    line: "{{item}}=yes"
+    dest: /etc/frr/daemons
+    create: yes
+  with_items:
+    - zebra
+    - bgpd
+    - ospfd
+    - ospf6d
+    - ripd
+    - ripngd
+    - isisd
+    - pimd
+    - ldpd
+    - nhrpd
+    - eigrpd
+    - babeld
+    - sharpd
+
+- name: systemctl enable and start frr
+  systemd:
+    name: frr
+    state: started
+    enabled: yes
